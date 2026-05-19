@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b16" />
+    <title>LocalGPT • Register</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="page-center">
+      <section class="auth-card">
+        <div class="brand">
+          <div class="brand-logo">LG</div>
+          <div>
+            <h1>Create Account</h1>
+            <p>Join your local AI workspace with a modern dark UI.</p>
+          </div>
+        </div>
+
+        {% if error %}
+        <div class="alert">{{ error }}</div>
+        {% endif %}
+
+        <form action="/register" method="post" class="auth-form">
+          <label>Username
+            <input type="text" name="username" autocomplete="username" required />
+          </label>
+          <label>Password
+            <input type="password" name="password" autocomplete="new-password" required />
+          </label>
+          <label>Confirm password
+            <input type="password" name="password_confirm" autocomplete="new-password" required />
+          </label>
+          <button type="submit" class="primary-button">Create account</button>
+        </form>
+
+        <p class="meta-text">
+          Already registered? <a href="/login">Sign in</a>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

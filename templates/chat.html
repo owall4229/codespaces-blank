@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b16" />
+    <title>LocalGPT • Chat</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-logo small">LG</div>
+          <div>
+            <h2>LocalGPT</h2>
+            <p>Dark local chat UI</p>
+          </div>
+        </div>
+        <div class="sidebar-user">
+          <span>Signed in as</span>
+          <strong>{{ user }}</strong>
+        </div>
+        <a class="outline-button" href="/logout">Log out</a>
+      </aside>
+
+      <main class="chat-layout">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Local assistant</p>
+            <h1>Talk to your local AI just like ChatGPT.</h1>
+          </div>
+          <div class="chat-badge">
+            <span>Online</span>
+            <span class="badge-pill">Streaming</span>
+          </div>
+        </header>
+
+        <section id="conversation" class="conversation">
+          {% for message in history %}
+            <div class="message {{ 'user' if message.role == 'user' else 'assistant' }}">
+              <div class="message-role">{{ 'You' if message.role == 'user' else 'Assistant' }}</div>
+              <div class="message-content">{{ message.content }}</div>
+            </div>
+          {% endfor %}
+        </section>
+
+        <form id="chat-form" class="composer">
+          <div class="textarea-wrapper">
+            <textarea id="prompt" name="prompt" rows="1" placeholder="Type a message and press Enter to send. Shift+Enter for a new line."></textarea>
+          </div>
+          <button type="submit" class="primary-button send-button" aria-label="Send message">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+      </main>
+    </div>
+
+    <script>
+const currentUser = {{ user|tojson }};
+    </script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
