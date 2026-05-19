@@ -214,13 +214,17 @@ def chat_page(request: Request, user: str = Depends(require_user)) -> HTMLRespon
     )
 
 
-def stream_chat_response(request: Request, prompt: str) -> Any:
-    history = request.session.setdefault("history", [])
+def stream_chat_response(request: Request, prompt: str) -> str:
+    """Generate response and update session history."""
+    history = request.session.get("history", [])
+    if not isinstance(history, list):
+        history = []
+    
     formatted_prompt = build_prompt(history, prompt)
     assistant_text = ""
 
-    def generator() -> Any:
-        nonlocal assistant_text
+    # Generate full response with model lock held
+    with app.state.model_lock:
         for token in app.state.gpt4all.generate(
             formatted_prompt,
             max_tokens=350,
@@ -233,13 +237,13 @@ def stream_chat_response(request: Request, prompt: str) -> Any:
             streaming=True,
         ):
             assistant_text += token
-            yield token
 
-        history.append({"role": "user", "content": prompt})
-        history.append({"role": "assistant", "content": assistant_text})
-        request.session["history"] = history[-12:]
+    # Update session with full history after generation completes
+    history.append({"role": "user", "content": prompt})
+    history.append({"role": "assistant", "content": assistant_text})
+    request.session["history"] = history[-12:]
 
-    return generator()
+    return assistant_text
 
 
 @app.post("/api/chat")
@@ -247,9 +251,14 @@ def api_chat(request: Request, prompt: str = Form(...), user: str = Depends(requ
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    def locked_stream() -> Any:
-        with app.state.model_lock:
-            for chunk in stream_chat_response(request, prompt):
-                yield chunk
+    def response_generator() -> Any:
+        try:
+            assistant_text = stream_chat_response(request, prompt)
+            for char in assistant_text:
+                yield char
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"Error: {str(e)}"
 
-    return StreamingResponse(locked_stream(), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(response_generator(), media_type="text/plain; charset=utf-8")
