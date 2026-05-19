@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import secrets
+import sys
 import threading
+from contextlib import contextmanager, redirect_stderr
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,7 +23,22 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from gpt4all import GPT4All
+
+@contextmanager
+def suppress_stderr() -> Any:
+    stderr_fd = sys.stderr.fileno()
+    with open(os.devnull, 'w') as devnull:
+        saved_stderr = os.dup(stderr_fd)
+        os.dup2(devnull.fileno(), stderr_fd)
+        try:
+            yield
+        finally:
+            os.dup2(saved_stderr, stderr_fd)
+            os.close(saved_stderr)
+
+with open(os.devnull, 'w') as _devnull:
+    with redirect_stderr(_devnull):
+        from gpt4all import GPT4All
 
 BASE_DIR = Path(__file__).resolve().parent
 USERS_FILE = BASE_DIR / "users.json"
@@ -83,17 +100,22 @@ def build_prompt(history: list[dict[str, str]], user_input: str) -> str:
     return "".join(prompt)
 
 
+def create_gpt4all() -> GPT4All:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    with suppress_stderr():
+        return GPT4All(
+            model_name=MODEL_NAME,
+            model_path=CACHE_DIR,
+            allow_download=True,
+            device="cpu",
+        )
+
 @app.on_event("startup")
 def startup_event() -> None:
     if not USERS_FILE.exists():
         save_users({})
     app.state.model_lock = threading.Lock()
-    app.state.gpt4all = GPT4All(
-        model_name=MODEL_NAME,
-        model_path=CACHE_DIR,
-        allow_download=True,
-        device="cpu",
-    )
+    app.state.gpt4all = create_gpt4all()
 
 
 @app.on_event("shutdown")

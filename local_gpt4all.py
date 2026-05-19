@@ -3,9 +3,21 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from contextlib import redirect_stderr
+from contextlib import contextmanager, redirect_stderr
 from pathlib import Path
-from typing import List
+from typing import Any, List
+
+@contextmanager
+def suppress_stderr() -> Any:
+    stderr_fd = sys.stderr.fileno()
+    with open(os.devnull, 'w') as devnull:
+        saved_stderr = os.dup(stderr_fd)
+        os.dup2(devnull.fileno(), stderr_fd)
+        try:
+            yield
+        finally:
+            os.dup2(saved_stderr, stderr_fd)
+            os.close(saved_stderr)
 
 with open(os.devnull, "w") as _null_stderr:
     with redirect_stderr(_null_stderr):
@@ -41,12 +53,14 @@ def main() -> None:
     print("Type 'exit' or 'quit' to stop.\n")
     print("Note: On CPU-only systems, GPT4All may print optional CUDA loader warnings even though it will run on CPU.\n")
 
-    model = GPT4All(
-        model_name=args.model,
-        model_path=CACHE_DIR,
-        allow_download=True,
-        device="cpu",
-    )
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    with suppress_stderr():
+        model = GPT4All(
+            model_name=args.model,
+            model_path=CACHE_DIR,
+            allow_download=True,
+            device="cpu",
+        )
 
     history: List[tuple[str, str]] = []
 
