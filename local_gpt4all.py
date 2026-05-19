@@ -23,7 +23,7 @@ with open(os.devnull, "w") as _null_stderr:
     with redirect_stderr(_null_stderr):
         from gpt4all import GPT4All
 
-MODEL_NAME = "mistral-7b-instruct-v0.1.Q4_0.gguf"
+MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
 CACHE_DIR = Path.home() / ".cache" / "gpt4all"
 SYSTEM_PROMPT = "You are a helpful local AI assistant. Answer clearly and accurately."
 
@@ -60,6 +60,7 @@ def main() -> None:
             model_path=CACHE_DIR,
             allow_download=True,
             device="cpu",
+            n_threads=min(4, os.cpu_count() or 1),
         )
 
     history: List[tuple[str, str]] = []

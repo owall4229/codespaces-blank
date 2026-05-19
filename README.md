@@ -16,7 +16,7 @@ python3 -m pip install -r requirements.txt
 python3 local_gpt4all.py
 ```
 
-The first run will automatically download the `mistral-7b-instruct-v0.1.Q4_0.gguf` model to `~/.cache/gpt4all/`.
+The first run will automatically download the `Llama-3.2-1B-Instruct-Q4_0.gguf` model to `~/.cache/gpt4all/`.
 
 ## Web UI
 
@@ -40,4 +40,5 @@ The first web request may take a bit longer while the model loads.
 
 - This is a local model and does not require an expensive external API key.
 - The script forces CPU mode so the missing CUDA libraries are ignored on systems without NVIDIA GPU support.
+- The default model is `Llama-3.2-1B-Instruct-Q4_0.gguf`, which is CPU-friendly. To use a different model, set the `GPT4ALL_MODEL` environment variable.
 - The model file is about 773 MB and may take a few minutes to download on first run.

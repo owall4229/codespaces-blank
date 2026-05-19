@@ -19,7 +19,7 @@ from fastapi import (
     Request,
     status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -43,7 +43,7 @@ with open(os.devnull, 'w') as _devnull:
 BASE_DIR = Path(__file__).resolve().parent
 USERS_FILE = BASE_DIR / "users.json"
 CACHE_DIR = Path.home() / ".cache" / "gpt4all"
-MODEL_NAME = "mistral-7b-instruct-v0.1.Q4_0.gguf"
+MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
 SYSTEM_PROMPT = "You are a sophisticated local AI assistant. Respond helpfully, accurately, and with a friendly tone."
 SECRET_KEY = os.environ.get("SESSION_SECRET", "change-me-in-production")
 
@@ -108,6 +108,7 @@ def create_gpt4all() -> GPT4All:
             model_path=CACHE_DIR,
             allow_download=True,
             device="cpu",
+            n_threads=min(4, os.cpu_count() or 1),
         )
 
 @app.on_event("startup")
@@ -214,18 +215,15 @@ def chat_page(request: Request, user: str = Depends(require_user)) -> HTMLRespon
     )
 
 
-def stream_chat_response(request: Request, prompt: str) -> str:
-    """Generate response and update session history."""
+def generate_chat_response(request: Request, prompt: str) -> str:
+    """Generate a full assistant response and update session history."""
     history = request.session.get("history", [])
     if not isinstance(history, list):
         history = []
-    
-    formatted_prompt = build_prompt(history, prompt)
-    assistant_text = ""
 
-    # Generate full response with model lock held
+    formatted_prompt = build_prompt(history, prompt)
     with app.state.model_lock:
-        for token in app.state.gpt4all.generate(
+        assistant_text = app.state.gpt4all.generate(
             formatted_prompt,
             max_tokens=350,
             temp=0.75,
@@ -234,11 +232,9 @@ def stream_chat_response(request: Request, prompt: str) -> str:
             repeat_penalty=1.18,
             repeat_last_n=64,
             n_batch=8,
-            streaming=True,
-        ):
-            assistant_text += token
+            streaming=False,
+        )
 
-    # Update session with full history after generation completes
     history.append({"role": "user", "content": prompt})
     history.append({"role": "assistant", "content": assistant_text})
     request.session["history"] = history[-12:]
@@ -247,18 +243,14 @@ def stream_chat_response(request: Request, prompt: str) -> str:
 
 
 @app.post("/api/chat")
-def api_chat(request: Request, prompt: str = Form(...), user: str = Depends(require_user)) -> StreamingResponse:
+def api_chat(request: Request, prompt: str = Form(...), user: str = Depends(require_user)) -> PlainTextResponse:
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    def response_generator() -> Any:
-        try:
-            assistant_text = stream_chat_response(request, prompt)
-            for char in assistant_text:
-                yield char
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            yield f"Error: {str(e)}"
-
-    return StreamingResponse(response_generator(), media_type="text/plain; charset=utf-8")
+    try:
+        assistant_text = generate_chat_response(request, prompt)
+        return PlainTextResponse(assistant_text, media_type="text/plain; charset=utf-8")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

@@ -3,5 +3,9 @@
     "salt": "f68c6baca7525f2603ad1f44b10399d6",
     "hash": "b12d709b8f402c46eb9075d157aec64462bec6440c0105b0fc409ccc972a0ed9",
     "created_at": "2026-05-18T23:22:21.988610Z"
+  },
+  "test": {
+    "salt": "salt",
+    "hash": "c0fa39eb1af535507258f839520aa8cd0128c9e526a11f8a53464adb00cfc628"
   }
 }

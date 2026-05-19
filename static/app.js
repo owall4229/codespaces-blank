@@ -69,22 +69,11 @@ form.addEventListener('submit', async (event) => {
       throw new Error('Server error: ' + response.statusText);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let done = false;
-
-    while (!done) {
-      const { value, done: finished } = await reader.read();
-      done = finished;
-      if (value) {
-        const chunk = decoder.decode(value, { stream: true });
-        assistantText += chunk;
-        assistantBubble.textContent = assistantText;
-        scrollToBottom();
-      }
-    }
+    const assistantTextResponse = await response.text();
+    assistantBubble.textContent = assistantTextResponse;
+    scrollToBottom();
   } catch (error) {
-    assistantBubble.textContent = 'Unable to stream response. Please try again.';
+    assistantBubble.textContent = 'Unable to get a response. Please try again.';
     console.error(error);
   }
 });
