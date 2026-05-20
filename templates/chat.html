@@ -4,51 +4,50 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#070b16" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>LocalGPT • Chat</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar-brand">
-          <div class="brand-logo small">LG</div>
-          <div>
-            <h2>LocalGPT</h2>
-            <p>Dark local chat UI</p>
-          </div>
+    <div class="page-shell">
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-copy">
+          <p class="eyebrow">Welcome back</p>
+          <h1>Hello, {{ user }}</h1>
+          <p class="lead">One simple prompt in the center. Click it to reveal the chat room below.</p>
         </div>
-        <div class="sidebar-user">
-          <span>Signed in as</span>
-          <strong>{{ user }}</strong>
-        </div>
-        <a class="outline-button" href="/logout">Log out</a>
-      </aside>
+        <button id="welcome-prompt" class="welcome-prompt" type="button">Start a new conversation</button>
+      </div>
 
-      <main class="chat-layout">
-        <header class="chat-header">
-          <div>
-            <p class="eyebrow">Local assistant</p>
-            <h1>Talk to your local AI just like ChatGPT.</h1>
+      <div class="chat-container" id="chat-container" aria-hidden="true">
+        <div class="top-bar">
+          <div class="brand-pill">
+            <span>LG</span>
+            <strong>LocalGPT</strong>
           </div>
-          <div class="chat-badge">
-            <span>Online</span>
-            <span class="badge-pill">Streaming</span>
+          <div class="session-status">
+            <span class="session-text">Signed in as</span>
+            <strong>{{ user }}</strong>
           </div>
-        </header>
+          <a class="logout-link" href="/logout">Log out</a>
+        </div>
 
         <section id="conversation" class="conversation">
           {% for message in history %}
             <div class="message {{ 'user' if message.role == 'user' else 'assistant' }}">
               <div class="message-role">{{ 'You' if message.role == 'user' else 'Assistant' }}</div>
-              <div class="message-content">{{ message.content }}</div>
+              <div class="message-content">{{ message.content | e }}</div>
             </div>
           {% endfor %}
         </section>
 
         <form id="chat-form" class="composer">
           <div class="textarea-wrapper">
-            <textarea id="prompt" name="prompt" rows="1" placeholder="Type a message and press Enter to send. Shift+Enter for a new line."></textarea>
+            <textarea id="prompt" name="prompt" rows="1" placeholder="Type a message and press Enter. Shift+Enter for a new line."></textarea>
           </div>
           <button type="submit" class="primary-button send-button" aria-label="Send message">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -57,12 +56,13 @@
             </svg>
           </button>
         </form>
-      </main>
+      </div>
     </div>
 
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script>
-const currentUser = {{ user|tojson }};
+      const currentUser = {{ user|tojson }};
     </script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ static_version }}"></script>
   </body>
 </html>

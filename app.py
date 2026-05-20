@@ -46,6 +46,7 @@ CACHE_DIR = Path.home() / ".cache" / "gpt4all"
 MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
 SYSTEM_PROMPT = "You are a sophisticated local AI assistant. Respond helpfully, accurately, and with a friendly tone."
 SECRET_KEY = os.environ.get("SESSION_SECRET", "change-me-in-production")
+STATIC_VERSION = os.environ.get("STATIC_VERSION", "4")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -211,6 +212,7 @@ def chat_page(request: Request, user: str = Depends(require_user)) -> HTMLRespon
             "request": request,
             "user": user,
             "history": request.session.get("history", []),
+            "static_version": STATIC_VERSION,
         },
     )
 
@@ -225,7 +227,7 @@ def generate_chat_response(request: Request, prompt: str) -> str:
     with app.state.model_lock:
         assistant_text = app.state.gpt4all.generate(
             formatted_prompt,
-            max_tokens=350,
+            max_tokens=900,
             temp=0.75,
             top_k=40,
             top_p=0.4,
