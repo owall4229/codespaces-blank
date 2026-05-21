@@ -367,7 +367,7 @@ generateImageBtn.addEventListener('click', async () => {
     resizeTextareas();
     openChat();
     scrollToBottom();
-    showImageStatus('Image generated successfully! Scroll the conversation to view it, or enter another prompt to continue.', 5000);
+    showImageStatus(responseBody?.message || 'Image generated successfully! Scroll the conversation to view it, or enter another prompt to continue.', 5000);
   } catch (error) {
     console.error(error);
     const message = error?.message || 'Unable to generate the image. Try adjusting your prompt or try again in a moment.';

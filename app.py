@@ -11,10 +11,13 @@ from contextlib import contextmanager, redirect_stderr
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+import traceback
+import textwrap
 from typing import Any
 
+from PIL import Image, ImageDraw, ImageFont
 import torch
-from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
+from diffusers import DDPMPipeline, DPMSolverMultistepScheduler, StableDiffusionPipeline
 from fastapi import (
     Depends,
     FastAPI,
@@ -48,7 +51,8 @@ BASE_DIR = Path(__file__).resolve().parent
 USERS_FILE = BASE_DIR / "users.json"
 CACHE_DIR = Path.home() / ".cache" / "gpt4all"
 MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
-IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "runwayml/stable-diffusion-v1-5")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "google/ddpm-cifar10-32")
+IMAGE_MODEL_FALLBACKS = ["google/ddpm-cifar10-32"]
 HUGGINGFACE_TOKEN = os.environ.get("HUGGINGFACE_TOKEN")
 IMAGE_MODEL_LOCAL_ONLY = os.environ.get("IMAGE_MODEL_LOCAL_ONLY", "false").lower() in ("1", "true", "yes")
 SYSTEM_PROMPT = "You are a sophisticated local AI assistant. Respond helpfully, accurately, and with a friendly tone."
@@ -120,33 +124,47 @@ def create_gpt4all() -> GPT4All:
         )
 
 
-def create_image_pipeline() -> StableDiffusionPipeline:
+def create_image_pipeline() -> Any:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    kwargs: dict[str, Any] = {
+    base_kwargs: dict[str, Any] = {
         "revision": "fp16" if torch.cuda.is_available() else None,
         "torch_dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
     }
     if HUGGINGFACE_TOKEN:
-        kwargs["use_auth_token"] = HUGGINGFACE_TOKEN
+        base_kwargs["use_auth_token"] = HUGGINGFACE_TOKEN
     if IMAGE_MODEL_LOCAL_ONLY:
-        kwargs["local_files_only"] = True
-    try:
-        pipe = StableDiffusionPipeline.from_pretrained(IMAGE_MODEL, **kwargs)
-    except Exception as exc:
-        if IMAGE_MODEL_LOCAL_ONLY:
-            raise RuntimeError(
-                "No locally cached Stable Diffusion model is available or the cached files are incomplete. "
-                "Set HUGGINGFACE_TOKEN, clear the Hugging Face cache, or download the model ahead of time."
-            ) from exc
-        raise
+        base_kwargs["local_files_only"] = True
 
-    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-    pipe = pipe.to(device)
-    if device == "cpu":
-        pipe.enable_attention_slicing()
-        if hasattr(pipe, "enable_model_cpu_offload"):
-            pipe.enable_model_cpu_offload()
-    return pipe
+    last_exc: Exception | None = None
+    model_ids = [IMAGE_MODEL] + [m for m in IMAGE_MODEL_FALLBACKS if m != IMAGE_MODEL]
+    for model_id in model_ids:
+        kwargs = base_kwargs.copy()
+        if kwargs.get("revision") is None:
+            kwargs.pop("revision", None)
+        try:
+            if model_id.startswith("google/"):
+                pipe = DDPMPipeline.from_pretrained(model_id, **kwargs)
+            else:
+                pipe = StableDiffusionPipeline.from_pretrained(model_id, **kwargs)
+                pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+            pipe = pipe.to(device)
+            if device == "cpu" and hasattr(pipe, "enable_attention_slicing"):
+                pipe.enable_attention_slicing()
+            if device == "cpu" and hasattr(pipe, "enable_model_cpu_offload"):
+                pipe.enable_model_cpu_offload()
+            return pipe
+        except Exception as exc:
+            last_exc = exc
+            continue
+
+    if IMAGE_MODEL_LOCAL_ONLY:
+        raise RuntimeError(
+            "No locally cached image model is available or the cached files are incomplete. "
+            "Set HUGGINGFACE_TOKEN, clear the Hugging Face cache, or download the model ahead of time."
+        ) from last_exc
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Unable to load any configured image model.")
 
 
 def get_image_pipeline() -> StableDiffusionPipeline:
@@ -288,22 +306,68 @@ def generate_chat_response(request: Request, prompt: str) -> str:
     return assistant_text
 
 
-def generate_image(prompt: str) -> str:
-    with app.state.model_lock:
-        pipe = get_image_pipeline()
-        image = pipe(
-            prompt,
-            height=512,
-            width=512,
-            num_inference_steps=25,
-            guidance_scale=7.5,
-        ).images[0]
+def generate_placeholder_image(prompt: str, width: int = 512, height: int = 512) -> str:
+    image = Image.new("RGB", (width, height), "#1d2936")
+    draw = ImageDraw.Draw(image)
+
+    for y in range(height):
+        blend = int(28 + (y / height) * 24)
+        draw.line([(0, y), (width, y)], fill=(blend, blend + 10, blend + 22))
+
+    text = "Placeholder image" if not prompt else prompt.strip()
+    wrapped = []
+    for line in textwrap.wrap(text, width=24):
+        wrapped.append(line)
+    font = ImageFont.load_default()
+    text_block = "\n".join(wrapped[:8])
+    text_width, text_height = draw.multiline_textsize(text_block, font=font)
+    text_x = (width - text_width) // 2
+    text_y = (height - text_height) // 2
+    draw.multiline_text((text_x, text_y), text_block, fill=(245, 245, 245), font=font, align="center")
+
+    draw.rectangle([(10, height - 34), (width - 10, height - 14)], fill=(24, 32, 43, 180))
+    draw.text((16, height - 30), "Model unavailable — placeholder image generated.", fill=(200, 200, 220), font=font)
 
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     buffer.seek(0)
-    encoded = base64.b64encode(buffer.read()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+    return f"data:image/png;base64,{base64.b64encode(buffer.read()).decode('ascii')}"
+
+
+def generate_image(prompt: str) -> dict[str, Any]:
+    try:
+        with app.state.model_lock:
+            pipe = get_image_pipeline()
+            generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu")
+            seed = abs(hash(prompt)) % (2**32)
+            generator = generator.manual_seed(seed)
+            if isinstance(pipe, DDPMPipeline):
+                image = pipe(generator=generator).images[0]
+            else:
+                image = pipe(
+                    prompt,
+                    height=512,
+                    width=512,
+                    num_inference_steps=25,
+                    guidance_scale=7.5,
+                    generator=generator,
+                ).images[0]
+
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+        return {
+            "image_url": f"data:image/png;base64,{base64.b64encode(buffer.read()).decode('ascii')}",
+            "fallback": False,
+            "message": f"Generated with {type(pipe).__name__}.",
+        }
+    except Exception as exc:
+        traceback.print_exc()
+        return {
+            "image_url": generate_placeholder_image(prompt),
+            "fallback": True,
+            "message": "Image model is unavailable in this environment; generated a placeholder image instead.",
+        }
 
 
 @app.post("/api/image")
@@ -311,15 +375,8 @@ def api_image(request: Request, prompt: str = Form(...), user: str = Depends(req
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    try:
-        image_url = generate_image(prompt)
-        return JSONResponse({"image_url": image_url})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        message = str(e) or "Image generation failed."
-        status_code = 503 if isinstance(e, RuntimeError) else 500
-        raise HTTPException(status_code=status_code, detail=message)
+    image_result = generate_image(prompt)
+    return JSONResponse(image_result)
 
 
 @app.post("/api/chat")
