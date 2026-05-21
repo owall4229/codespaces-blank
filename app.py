@@ -50,7 +50,7 @@ CACHE_DIR = Path.home() / ".cache" / "gpt4all"
 MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "runwayml/stable-diffusion-v1-5")
 HUGGINGFACE_TOKEN = os.environ.get("HUGGINGFACE_TOKEN")
-IMAGE_MODEL_LOCAL_ONLY = os.environ.get("IMAGE_MODEL_LOCAL_ONLY", "true").lower() in ("1", "true", "yes")
+IMAGE_MODEL_LOCAL_ONLY = os.environ.get("IMAGE_MODEL_LOCAL_ONLY", "false").lower() in ("1", "true", "yes")
 SYSTEM_PROMPT = "You are a sophisticated local AI assistant. Respond helpfully, accurately, and with a friendly tone."
 SECRET_KEY = os.environ.get("SESSION_SECRET", "change-me-in-production")
 STATIC_VERSION = os.environ.get("STATIC_VERSION", "4")
@@ -122,21 +122,21 @@ def create_gpt4all() -> GPT4All:
 
 def create_image_pipeline() -> StableDiffusionPipeline:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    local_files_only = IMAGE_MODEL_LOCAL_ONLY and HUGGINGFACE_TOKEN is None
+    kwargs: dict[str, Any] = {
+        "revision": "fp16" if torch.cuda.is_available() else None,
+        "torch_dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
+    }
+    if HUGGINGFACE_TOKEN:
+        kwargs["use_auth_token"] = HUGGINGFACE_TOKEN
+    if IMAGE_MODEL_LOCAL_ONLY:
+        kwargs["local_files_only"] = True
     try:
-        pipe = StableDiffusionPipeline.from_pretrained(
-            IMAGE_MODEL,
-            revision="fp16" if torch.cuda.is_available() else None,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            use_auth_token=HUGGINGFACE_TOKEN if HUGGINGFACE_TOKEN else None,
-            local_files_only=local_files_only,
-        )
+        pipe = StableDiffusionPipeline.from_pretrained(IMAGE_MODEL, **kwargs)
     except Exception as exc:
-        if local_files_only:
+        if IMAGE_MODEL_LOCAL_ONLY:
             raise RuntimeError(
-                "No locally cached Stable Diffusion model is available. "
-                "Set HUGGINGFACE_TOKEN or download the model ahead of time, "
-                "or run this app on a machine with enough resources."
+                "No locally cached Stable Diffusion model is available or the cached files are incomplete. "
+                "Set HUGGINGFACE_TOKEN, clear the Hugging Face cache, or download the model ahead of time."
             ) from exc
         raise
 

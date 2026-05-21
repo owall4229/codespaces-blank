@@ -370,7 +370,8 @@ generateImageBtn.addEventListener('click', async () => {
     showImageStatus('Image generated successfully! Scroll the conversation to view it, or enter another prompt to continue.', 5000);
   } catch (error) {
     console.error(error);
-    showImageStatus('Unable to generate the image. Try adjusting your prompt or try again in a moment.', 5000);
+    const message = error?.message || 'Unable to generate the image. Try adjusting your prompt or try again in a moment.';
+    showImageStatus(message, 10000);
   } finally {
     generateImageBtn.disabled = false;
     generateImageBtn.textContent = '🖼️';
