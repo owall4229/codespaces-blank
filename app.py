@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -8,9 +9,12 @@ import sys
 import threading
 from contextlib import contextmanager, redirect_stderr
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import torch
+from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
 from fastapi import (
     Depends,
     FastAPI,
@@ -19,7 +23,7 @@ from fastapi import (
     Request,
     status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -44,6 +48,9 @@ BASE_DIR = Path(__file__).resolve().parent
 USERS_FILE = BASE_DIR / "users.json"
 CACHE_DIR = Path.home() / ".cache" / "gpt4all"
 MODEL_NAME = os.environ.get("GPT4ALL_MODEL", "Llama-3.2-1B-Instruct-Q4_0.gguf")
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "runwayml/stable-diffusion-v1-5")
+HUGGINGFACE_TOKEN = os.environ.get("HUGGINGFACE_TOKEN")
+IMAGE_MODEL_LOCAL_ONLY = os.environ.get("IMAGE_MODEL_LOCAL_ONLY", "true").lower() in ("1", "true", "yes")
 SYSTEM_PROMPT = "You are a sophisticated local AI assistant. Respond helpfully, accurately, and with a friendly tone."
 SECRET_KEY = os.environ.get("SESSION_SECRET", "change-me-in-production")
 STATIC_VERSION = os.environ.get("STATIC_VERSION", "4")
@@ -112,12 +119,49 @@ def create_gpt4all() -> GPT4All:
             n_threads=min(4, os.cpu_count() or 1),
         )
 
+
+def create_image_pipeline() -> StableDiffusionPipeline:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    local_files_only = IMAGE_MODEL_LOCAL_ONLY and HUGGINGFACE_TOKEN is None
+    try:
+        pipe = StableDiffusionPipeline.from_pretrained(
+            IMAGE_MODEL,
+            revision="fp16" if torch.cuda.is_available() else None,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            use_auth_token=HUGGINGFACE_TOKEN if HUGGINGFACE_TOKEN else None,
+            local_files_only=local_files_only,
+        )
+    except Exception as exc:
+        if local_files_only:
+            raise RuntimeError(
+                "No locally cached Stable Diffusion model is available. "
+                "Set HUGGINGFACE_TOKEN or download the model ahead of time, "
+                "or run this app on a machine with enough resources."
+            ) from exc
+        raise
+
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    pipe = pipe.to(device)
+    if device == "cpu":
+        pipe.enable_attention_slicing()
+        if hasattr(pipe, "enable_model_cpu_offload"):
+            pipe.enable_model_cpu_offload()
+    return pipe
+
+
+def get_image_pipeline() -> StableDiffusionPipeline:
+    if not hasattr(app.state, "sd_pipe") or app.state.sd_pipe is None:
+        app.state.sd_pipe = create_image_pipeline()
+    return app.state.sd_pipe
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     if not USERS_FILE.exists():
         save_users({})
     app.state.model_lock = threading.Lock()
     app.state.gpt4all = create_gpt4all()
+    app.state.sd_pipe = None
 
 
 @app.on_event("shutdown")
@@ -242,6 +286,40 @@ def generate_chat_response(request: Request, prompt: str) -> str:
     request.session["history"] = history[-12:]
 
     return assistant_text
+
+
+def generate_image(prompt: str) -> str:
+    with app.state.model_lock:
+        pipe = get_image_pipeline()
+        image = pipe(
+            prompt,
+            height=512,
+            width=512,
+            num_inference_steps=25,
+            guidance_scale=7.5,
+        ).images[0]
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    encoded = base64.b64encode(buffer.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+@app.post("/api/image")
+def api_image(request: Request, prompt: str = Form(...), user: str = Depends(require_user)) -> JSONResponse:
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
+
+    try:
+        image_url = generate_image(prompt)
+        return JSONResponse({"image_url": image_url})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        message = str(e) or "Image generation failed."
+        status_code = 503 if isinstance(e, RuntimeError) else 500
+        raise HTTPException(status_code=status_code, detail=message)
 
 
 @app.post("/api/chat")

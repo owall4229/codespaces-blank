@@ -24,38 +24,67 @@
       </div>
 
       <div class="chat-container" id="chat-container" aria-hidden="true">
-        <div class="top-bar">
-          <div class="brand-pill">
-            <span>LG</span>
-            <strong>LocalGPT</strong>
-          </div>
-          <div class="session-status">
-            <span class="session-text">Signed in as</span>
-            <strong>{{ user }}</strong>
-          </div>
-          <a class="logout-link" href="/logout">Log out</a>
-        </div>
-
-        <section id="conversation" class="conversation">
-          {% for message in history %}
-            <div class="message {{ 'user' if message.role == 'user' else 'assistant' }}">
-              <div class="message-role">{{ 'You' if message.role == 'user' else 'Assistant' }}</div>
-              <div class="message-content">{{ message.content | e }}</div>
+        <div class="chat-shell">
+          <aside class="sidebar">
+            <div class="ai-header">
+              <div class="ai-brand">
+                <img src="/static/favicon.svg" alt="logo" class="ai-logo" />
+                <strong>Gen2</strong>
+              </div>
+              <button id="new-chat-btn" class="icon-btn" title="New chat" aria-label="New chat">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
             </div>
-          {% endfor %}
-        </section>
+            <div id="chat-list" class="chat-list">
+              <!-- Chats will be listed here -->
+            </div>
+          </aside>
 
-        <form id="chat-form" class="composer">
-          <div class="textarea-wrapper">
-            <textarea id="prompt" name="prompt" rows="1" placeholder="Type a message and press Enter. Shift+Enter for a new line."></textarea>
-          </div>
-          <button type="submit" class="primary-button send-button" aria-label="Send message">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </form>
+          <main class="main-area">
+            <div class="top-bar">
+              <div class="brand-pill">
+                <span>LG</span>
+                <strong>LocalGPT</strong>
+              </div>
+              <div class="session-status">
+                <span class="session-text">Signed in as</span>
+                <strong>{{ user }}</strong>
+              </div>
+              <a class="logout-link" href="/logout">Log out</a>
+            </div>
+
+            <section id="conversation" class="conversation">
+              {% for message in history %}
+                <div class="message {{ 'user' if message.role == 'user' else 'assistant' }}">
+                  <div class="message-role">{{ 'You' if message.role == 'user' else 'Assistant' }}</div>
+                  <div class="message-content">{{ message.content | e }}</div>
+                </div>
+              {% endfor %}
+            </section>
+
+            <div id="center-placeholder" class="center-placeholder">
+              <div id="initial-input" class="initial-input">Click to start a conversation</div>
+            </div>
+
+            <form id="chat-form" class="composer hidden">
+              <div class="composer-body">
+                <div class="textarea-wrapper">
+                  <textarea id="prompt" name="prompt" rows="1" placeholder="Type a message or use the image button to generate an image from this prompt. Shift+Enter for a new line."></textarea>
+                </div>
+              </div>
+              <div class="composer-actions">
+                <button id="generate-image-btn" type="button" class="secondary-button image-button" aria-label="Generate image">🖼️</button>
+                <button type="submit" class="primary-button send-button" aria-label="Send message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
+              <div id="image-status" class="status-label hidden" aria-live="polite"></div>
+            </form>
+          </main>
+        </div>
       </div>
     </div>
 
